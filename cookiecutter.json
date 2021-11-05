@@ -1,0 +1,18 @@
+{
+    "project_name": "your new project's name",
+    "project_description": "",
+    "project_slug": "{{ cookiecutter.project_name | slugify }}",
+    "creators": {"creator_list": 
+        [
+            {
+            "orcid": "",
+            "name": "Surname, Givenname"
+            }
+        ]
+    },
+    "container_repo_user": "glamworkbench",
+    "temp_directory": "",
+    "repository": "",
+    "repository_name": "",
+    "_extensions": ["jinja2_time.TimeExtension", "cookiecutter.extensions.JsonifyExtension", "cookiecutter.extensions.SlugifyExtension"]
+}

@@ -1,0 +1,36 @@
+{
+  "language": "eng",
+  "license": "MIT",
+  "title": "{{cookiecutter.repository}}",
+  "related_identifiers": [
+    {
+      "scheme": "url",
+      "identifier": "https://github.com/{{cookiecutter.repository}}/tree/v0.0.0",
+      "relation": "isDerivedFrom",
+      "resource_type": "software"
+    },
+    {
+      "scheme": "url",
+      "identifier": "https://glam-workbench.github.io/",
+      "relation": "isDocumentedBy",
+      "resource_type": "publication-softwaredocumentation"
+    },
+    {
+      "scheme": "url",
+      "identifier": "https://glam-workbench.github.io/",
+      "relation": "isPartOf",
+      "resource_type": "other"
+    }
+  ],
+  "version": "v0.0.0",
+  "upload_type": "software",
+  "keywords": [
+    "digital humanities",
+    "Jupyter",
+    "GLAM Workbench"
+  ],
+  "publication_date": "{% now 'utc', '%Y-%m-%d' %}",
+  "creators": {{cookiecutter.creators | jsonify}},
+  "access_right": "open",
+  "description": ""
+}
