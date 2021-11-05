@@ -50,7 +50,7 @@ jobs:
         #                 cookiecutter.json file content
         #
         # --output-dir    Where to output the generated project dir into
-        run: cookiecutter . --no-input repository=${{ github.repository }} repository_name=${{ github.event.repository.name }}temp_directory=cookiecutter-temp
+        run: cookiecutter . --no-input repository=${{ github.repository }} repository_name=${{ github.event.repository.name }} temp_directory=cookiecutter-temp
 
       - name: Prepare root directory
         shell: bash
@@ -82,7 +82,7 @@ jobs:
           git checkout --orphan temp-branch && \
           git add . && \
           git commit -m 'Initial commit' && \
-          git push origin temp-branch:main -f
+          git push origin temp-branch:master -f
 
       - name: Remove secret REPO_SETUP_TOKEN
         # After re-initializing the repository, we can remove the `REPO_SETUP_TOKEN` secret.

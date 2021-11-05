@@ -1,7 +1,6 @@
 {
     "project_name": "your new project's name",
     "project_description": "",
-    "project_slug": "{{ cookiecutter.project_name | slugify }}",
     "creators": {"creator_list": 
         [
             {
@@ -11,6 +10,7 @@
         ]
     },
     "container_repo_user": "glamworkbench",
+    "project_slug": "{{ cookiecutter.project_name | slugify }}",
     "temp_directory": "",
     "repository": "",
     "repository_name": "",

@@ -11,13 +11,13 @@
     },
     {
       "scheme": "url",
-      "identifier": "https://glam-workbench.github.io/",
+      "identifier": "https://glam-workbench.net/{{cookiecutter.project_slug}}/",
       "relation": "isDocumentedBy",
       "resource_type": "publication-softwaredocumentation"
     },
     {
       "scheme": "url",
-      "identifier": "https://glam-workbench.github.io/",
+      "identifier": "https://glam-workbench.net/",
       "relation": "isPartOf",
       "resource_type": "other"
     }
