@@ -45,7 +45,7 @@ Every now and then you'll want to update your Python packages to keep everything
 * Run `pip-compile --upgrade`
 * Run `pip-sync`
 
-# Pushing to GitHub
+## Pushing to GitHub
 
 * Best to work in a new branch – `git checkout -b update`
 * Delete the contents of the `.binder` directory if it exists – this is a pointer to the latest Docker image, if you don't delete it, you won't be able to test your changes on Binder. It gets generated automatically when a new Docker image is created.
@@ -59,7 +59,9 @@ Every now and then you'll want to update your Python packages to keep everything
 
 ## Preparing for release
 
-To have versions automatically archived in Zenodo, you have to give Zenodo access to your GitHub account, and configure it to listen for any new releases from the repository.
+See these [notes on version numbering](https://github.com/GLAM-Workbench/glam-workbench.github.io/discussions/11). 
+
+To have versions automatically archived in Zenodo, you have to [give Zenodo access to your GitHub account](https://docs.github.com/en/repositories/archiving-a-github-repository/referencing-and-citing-content), and configure it to listen for any new releases from the repository.
 
 The `update_versions.sh` script in the `dev` directory helps you update various files so that you're ready to create a new release on GitHub. Just give it the name of the new version, eg: `./update_versions v0.1.0.`.
 
