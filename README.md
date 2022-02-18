@@ -36,7 +36,7 @@ Your new repository will contain the following files, updated by `cookiecutter` 
 
 * `README.md` – a README template, edit as required
 * `LICENSE`
-* `CONTRIBUTING.md` – this file
+* `CONTRIBUTING.md` – guidelines for developing your new repository
 * `requirements.in` – a list of Python packages needed to run notebooks
 * `dev-requirements.in` – additional packages needed for development
 * `runtime.txt` – set Python version
@@ -52,4 +52,5 @@ Your new repository will contain the following files, updated by `cookiecutter` 
 * `list_imports.py` – development utility script (see below for usage)
 * `test_and_lint.sh` – development utility script (see below for usage)
 
+Make sure you have a look at `CONTRIBUTING.md` for more information on developing your new repository.
 
