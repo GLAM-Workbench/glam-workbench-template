@@ -19,15 +19,15 @@ Before you go any further, it's a good idea to think about what your new reposit
 
 ### Create the repository
 
-1. Go to the [template repository](https://github.com/GLAM-Workbench/glam-workbench-template) and click on the big green  <button style="background-color:green; color:white;">Use this template</button> button.
-2. Enter a name for your new repository (see above) and click `Create repository from template`. If you've been made a member of the GLAM Workbench organisation, you should be able to create the repository within the GLAM Workbench by choosing it from the dropdown list. 
+1. Go to the [template repository](https://github.com/GLAM-Workbench/glam-workbench-template) and click on the big green **Use this template** button.
+2. Enter a name for your new repository (see above) and click **Create repository from template**. If you've been made a member of the GLAM Workbench organisation, you should be able to create the repository within the GLAM Workbench by choosing it from the dropdown list. 
 3. Head over to your newly-created repository to complete the setup.
 
 ### Complete setup
 
 1. In the new repository, click on the `cookiecutter.json` file to open it, then click on the pencil icon to start editing.
 2. Add the necessary configuration settings (see below) to `cookiecutter.json`.
-3. When you've finished, click on the green <button style="background-color:green; color:white;">Commit changes</button> button.
+3. When you've finished, click on the green **Commit changes** button.
 4. The 'Setup Repository Action' will be triggered to complete the configuration of your repository. Click on the 'Actions' tab to see what's happening.
 5. Once the action completes, you're ready to go!
 
