@@ -80,4 +80,4 @@ See the GLAM Workbench or [Zenodo](https://doi.org/10.5281/zenodo.3521724) for u
 ----
 
 This repository is part of the [GLAM Workbench](https://glam-workbench.github.io/).  
-If you think this project is worthwhile, you might like [to sponsor me on GitHub](https://github.com/sponsors/wragge?o=esb).
+

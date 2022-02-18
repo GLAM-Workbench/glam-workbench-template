@@ -1,2 +1,8 @@
 -c requirements.txt
-pip-tools
+pytest
+nbval
+black[jupyter]
+isort
+flake8
+nbqa
+pre-commit
