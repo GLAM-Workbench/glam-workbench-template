@@ -6,15 +6,17 @@ This is a template to create a new repository for the GLAM Workbench.
 
 ### Create a repository from this template
 
-1. Click the big green button `Use this template` or click <a href="../../generate">here</a>.
-2. Enter a name for your new repository and click `Create repository from template`
+1. Click the big green **Use this template** button.
+2. Enter a name for your new repository and click **Create repository from template**
 3. Head over to the created repository and complete the setup.
 
 ### Complete setup
 
-1. In the a new repository, <a href="../../edit/main/cookiecutter.json">complete the project setup</a> by editing the `cookiecutter.json` file. (See below for config details.) 
-1. Hit <kbd>cmd</kbd> + <kbd>S</kbd> and then <kbd>Enter</kbd> to perform a commit (the commit message doesn't really matter).
-1. Wait <a href="../../actions">Setup Repository Action</a> to complete.
+1. In the new repository, click on the `cookiecutter.json` file to open it, then click on the pencil icon to start editing.
+2. Add the necessary configuration settings (see below) to `cookiecutter.json`.
+3. When you've finished, click on the green **Commit changes** button.
+4. The 'Setup Repository Action' will be triggered to complete the configuration of your repository. Click on the 'Actions' tab to see what's happening.
+5. Once the action completes, you're ready to go!
 
 This template is based on @stefanbuck's [cookiecutter-template](https://github.com/stefanbuck/cookiecutter-template).
 
@@ -32,14 +34,22 @@ The other values can be left as they are.
 
 Your new repository will contain the following files, updated by `cookiecutter` to use the config values you supplied via `cookiecutter.json`:
 
-* `README.md`
+* `README.md` – a README template, edit as required
 * `LICENSE`
-* `requirements.in`
-* `dev-requirements.in`
-* `runtime.txt`
-* `reclaim-manifest.jps`
-* `sample_notebook.ipynb`
-
-There's also a `dev` directory that contains useful documentation and scripts for setting up and magaing your repository. Have a look at the `README.md` in the `dev` directory for instructions on getting your new repository running.
+* `CONTRIBUTING.md` – this file
+* `requirements.in` – a list of Python packages needed to run notebooks
+* `dev-requirements.in` – additional packages needed for development
+* `runtime.txt` – set Python version
+* `sample_notebook.ipynb` – a basic example notebook
+* `jupyter_config.json` – configuration for Voilá
+* `.zenodo.json` – metadata for integration with Zenodo
+* `reclaim-manifest.jps` – config file to allow one-click installation on Reclaim Cloud
+* `.github/cache_pull_request.yml` – GitHub action that runs when a pull request is created, and builds and caches an image for testing on Binder
+* `.github/docker_push.yml` – GitHub action that runs on merge/push, generates a Docker image and uploads it to Quay.io
+* `update_version.sh` – development utility script to update version numbers (see below for usage)
+* `pyproject.toml` – configuration for development environment
+* `.pre-commit-config.yaml` – configuration for development environment
+* `list_imports.py` – development utility script (see below for usage)
+* `test_and_lint.sh` – development utility script (see below for usage)
 
 
