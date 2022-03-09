@@ -10,7 +10,7 @@ This is a template to create a new repository for the GLAM Workbench.
 2. Enter a name for your new repository and click **Create repository from template**
 3. Head over to the created repository and complete the setup.
 
-### Set up authentication
+### Configure authentication
 
 In order to complete the process you'll need to create a personal access token and attach it to the new repository.
 
@@ -29,7 +29,7 @@ In order to complete the process you'll need to create a personal access token a
 
 That's it. The set up process will use the token, then delete the secret when it's finished.
 
-### Complete setup
+### Complete repository setup
 
 1. In the new repository, click on the `cookiecutter.json` file to open it, then click on the pencil icon to start editing.
 2. Add the necessary configuration settings (see below) to `cookiecutter.json`.
