@@ -7,7 +7,7 @@ This is a template to create a new repository for the GLAM Workbench.
 ### Create a repository from this template
 
 1. Click the big green **Use this template** button.
-2. Enter a name for your new repository and click **Create repository from template**
+2. Enter [a name for your new repository](https://glam-workbench.net/get-involved/developing-repositories/#think-of-a-name) and click **Create repository from template**
 3. Head over to the created repository and complete the setup.
 
 ### Configure authentication
