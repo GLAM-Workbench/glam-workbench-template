@@ -20,7 +20,7 @@ There are a number of different ways to use these notebooks. Binder is quickest 
 
 ### Using Binder
 
-[![Launch on Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/{{ cookiecutter.repository }}/master/?urlpath=lab/tree/index.md)
+[![Launch on Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/{{ cookiecutter.repository }}/master/?urlpath=lab/tree/index.ipynb)
 
 Click on the button above to launch the notebooks in this repository using the [Binder](https://mybinder.org/) service (it might take a little while to load). This is a free service, but note that sessions will close if you stop using the notebooks, and no data will be saved. Make sure you download any changed notebooks or harvested data that you want to save.
 
@@ -69,7 +69,7 @@ Assuming you have recent versions of Python and Git installed, the steps might b
 * Install the necessary Python packages: `pip install -r requirements.txt`
 * Run Jupyter: `jupyter lab`
 
-See the [GLAM Workbench for [more details](https://glam-workbench.net/getting-started/#using-python-on-your-own-computer.
+See [Getting started](https://glam-workbench.net/getting-started/#using-python-on-your-own-computer for more details.
 
 <!-- END RUN INFO -->
 
