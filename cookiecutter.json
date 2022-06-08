@@ -1,12 +1,14 @@
 {
     "project_name": "your new project's name",
     "project_description": "",
-    "creators": [
-        {
-        "orcid": "",
-        "name": "Surname, Givenname"
-        }
-    ],
+    "creators": {"creator_list": 
+        [
+            {
+            "orcid": "",
+            "name": "Surname, Givenname"
+            }
+        ]
+    },
     "container_repo_user": "glamworkbench",
     "project_slug": "{{ cookiecutter.project_name | slugify }}",
     "temp_directory": "",

@@ -30,7 +30,7 @@
     "GLAM Workbench"
   ],
   "publication_date": "{% now 'utc', '%Y-%m-%d' %}",
-  "creators": {{cookiecutter.creators | jsonify}},
+  "creators": {{cookiecutter.creators.creator_list | jsonify}},
   "access_right": "open",
   "description": ""
 }
