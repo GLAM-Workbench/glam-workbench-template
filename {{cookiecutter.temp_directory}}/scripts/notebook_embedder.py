@@ -22,7 +22,7 @@ def write_metadata(notebook: Path, key: str, value: str) -> None:
     
     data['metadata'][key] = json.loads(value)
     with open(notebook, 'w') as output_file:
-        output_file.write(json.dumps(data))
+        output_file.write(json.dumps(data, indent=2))
 
     
 
