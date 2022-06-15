@@ -29,33 +29,12 @@ def main():
         help="An metadata.json file containing some defaults for author information",
     )
     args = parser.parse_args()
-    crates = update_notebook_metadata(args.dir, args.metadata)
-    link_crates(crates, args.dir)
 
+    notebooks = get_notebooks(args.dir)
+    for notebook in notebooks:
+        update_notebook_metadata(notebook, args.metadata)
 
-def update_notebook_metadata(dir: Path, metadata: Path) -> List[ROCrate]:
-    """Creates and embeds rocrates in the metadata of all jupyter notebooks in the supplied
-    file.
-
-    Parameters:
-        dir: The directory in which to act.
-        metadata: A metadata file containing author information
-
-    Returns:
-        The embedded rocrates.
-    """
-    notebooks = get_notebooks(dir)
-    crates = [generate_rocrate(notebook, metadata) for notebook in notebooks]
-
-    # Embed rocrates
-    for notebook, crate in zip(notebooks, crates):
-        crate_file = create_temporary_crate_file(crate)
-        with open(crate_file) as in_file:
-            data = in_file.read()
-
-        embed_notebook_metadata(notebook, METADATA_KEY, data)
-
-    return crates
+    create_root_crate(args.dir, notebooks, args.metadata)
 
 
 def get_notebooks(dir: Path) -> List[Path]:
@@ -64,13 +43,34 @@ def get_notebooks(dir: Path) -> List[Path]:
     return list(filter(is_notebook, files))
 
 
+def update_notebook_metadata(notebook: Path, metadata: Path) -> None:
+    """Creates and embeds an rocrate in the metadata of a jupyter notebooks
+
+    Parameters:
+        notebook: The path of a jupyter notebook
+        metadata: A metadata file containing author information
+
+    """
+    crate = generate_rocrate(notebook, metadata)
+    crate_file = create_temporary_crate_file(crate)
+    with open(crate_file) as in_file:
+        data = in_file.read()
+    embed_notebook_metadata(notebook, METADATA_KEY, data)
+    clean_up()
+
+
 def generate_rocrate(notebook: Path, metadata: Path) -> ROCrate:
     crate = ROCrate()
+    add_notebook(crate, notebook, metadata)
+    return crate
+
+
+def add_notebook(crate: ROCrate, notebook: Path, metadata: Path) -> None:
     file = crate.add_file(notebook, properties=extract_properties(notebook, metadata))
     # Add the authors
     authors = extract_authors(crate, notebook, metadata)
+    crate.add(*authors)
     file["author"] = authors
-    return crate
 
 
 def extract_properties(notebook: Path, metadata: Path) -> Dict[str, str]:
@@ -87,21 +87,24 @@ def extract_authors(crate: ROCrate, notebook: Path, metadata: Path) -> List[Pers
     ]
 
 
-def link_crates(crates: List[ROCrate], output_dir: Path) -> None:
+def create_root_crate(output_dir: Path, notebooks: List[Path], metadata: Path) -> None:
     """Creates a parent crate in the supplied directory, linking together the
     info from its children crates.
 
     Parameters:
+        notebooks: The notebooks to include in the crate
         output_dir: The path to the directory in which to create the
                 ro-crate-metadata.json file.
+        metadata: A path to a metadata.json file
     """
     result = ROCrate()
-    for crate in crates:
-        result.add(crate.get_entities())
+    for notebook in notebooks:
+        add_notebook(result, notebook, metadata)
 
     # Create and copy across ro-crate-metadata.json file
     crate_file = create_temporary_crate_file(result)
-    shutil.copyfile(crate_file, output_dir)
+    shutil.copyfile(crate_file, output_dir.joinpath(crate_file.name))
+    clean_up()
 
 
 def create_temporary_crate_file(crate: ROCrate) -> Path:
@@ -110,6 +113,11 @@ def create_temporary_crate_file(crate: ROCrate) -> Path:
 
     crate.write(temp_dir)
     return temp_dir.joinpath(DEFAULT_CRATE_NAME)
+
+
+def clean_up() -> None:
+    """Deletes the temporary directory"""
+    shutil.rmtree(TEMP_DIR)
 
 
 if __name__ == "__main__":
