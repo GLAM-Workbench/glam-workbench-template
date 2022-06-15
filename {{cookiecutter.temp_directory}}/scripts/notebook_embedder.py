@@ -3,7 +3,7 @@ import json
 import argparse
 from pathlib import Path 
 
-def write_metadata(notebook: Path, key: str, value: str) -> None:
+def embed_notebook_metadata(notebook: Path, key: str, value: str) -> None:
     """
     Attempts to write a key value pair to the metadata of a given notebook.
 
@@ -40,7 +40,7 @@ def main():
     args = parser.parse_args()
     value = args.value.read()
     args.value.close()
-    write_metadata(Path(args.notebook), args.key, value)
+    embed_notebook_metadata(Path(args.notebook), args.key, value)
     
 
 if __name__ == "__main__":
