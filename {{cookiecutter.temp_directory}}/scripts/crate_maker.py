@@ -92,12 +92,14 @@ def add_notebook(crate: ROCrate, notebook: Path, metadata: Path) -> None:
     """
     default_authors = extract_default_authors(metadata)
     notebook_metadata = extract_notebook_metadata(
-        notebook, {"title": notebook.name, "creators": default_authors}
+        notebook,
+        {"title": notebook.name, "creators": default_authors, "description": ""},
     )
 
     # Add the notebook to the crate
     properties = {
         "name": notebook_metadata["title"],
+        "description": notebook_metadata["description"],
         "encodingFormat": "application/x-ipynb+json",
     }
     file = crate.add_file(notebook, properties=properties)
