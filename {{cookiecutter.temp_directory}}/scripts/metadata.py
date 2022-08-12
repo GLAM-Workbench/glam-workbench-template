@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 AuthorInfo = Dict[str, str]
 
@@ -21,23 +21,28 @@ def extract_default_authors(metadata: Path) -> List[AuthorInfo]:
     with open(metadata) as file:
         data = json.load(file)
 
-    if CREATORS_KEY not in data:
-        return [DEFAULT_AUTHOR]
-
-    return data[CREATORS_KEY]
+    return data.get(CREATORS_KEY, [DEFAULT_AUTHOR])
 
 
-def extract_notebook_authors(notebook: Path) -> Optional[List[AuthorInfo]]:
-    """Attempts to extract author information from within a jupyter notebook.
+def extract_notebook_metadata(notebook: Path, keys: Dict[str, Any]) -> Dict[str, Any]:
+    """Attempts to extract metadata from the notebook.
 
     Parameters:
         notebook: The path to the jupyter notebook
+        keys: A dictionary of keys to look for in the notebook, and their
+            corresponding defaults if the key is not found.
+
+    Returns:
+        A dictionary containing the retrieved metadata for each key.
     """
     with open(notebook) as file:
         data = json.load(file)
 
-    notebook_metadata = data["metadata"]
-    if CREATORS_KEY not in notebook_metadata:
-        return None
+    metadata = data["metadata"]
+    result = {}
 
-    return notebook_metadata[CREATORS_KEY]
+    for key, default in keys.items():
+        result[key] = metadata.get(key, default)
+
+    return result
+
