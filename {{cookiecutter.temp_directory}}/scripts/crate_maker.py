@@ -2,9 +2,10 @@ import os
 import argparse
 import shutil
 from pathlib import Path
-from typing import List
+from typing import Union, List
 from rocrate.rocrate import ROCrate
 from rocrate.model.person import Person
+from rocrate.model.contextentity import ContextEntity
 from notebook_embedder import embed_notebook_metadata
 from metadata import extract_default_authors, extract_notebook_metadata, AuthorInfo
 
@@ -29,9 +30,6 @@ def main():
     args = parser.parse_args()
 
     notebooks = get_notebooks(args.dir)
-    for notebook in notebooks:
-        update_notebook_metadata(notebook, args.metadata)
-
     create_root_crate(args.dir, notebooks, args.metadata)
 
 
@@ -47,22 +45,6 @@ def get_notebooks(dir: Path) -> List[Path]:
     files = [Path(file) for file in os.listdir(dir)]
     is_notebook = lambda file: file.suffix == NOTEBOOK_EXTENSION
     return list(filter(is_notebook, files))
-
-
-def update_notebook_metadata(notebook: Path, metadata: Path) -> None:
-    """Creates and embeds an rocrate in the metadata of a jupyter notebooks
-
-    Parameters:
-        notebook: The path of a jupyter notebook
-        metadata: A metadata file containing author information
-
-    """
-    crate = generate_notebook_crate(notebook, metadata)
-    crate_file = create_temporary_crate_file(crate)
-    with open(crate_file) as in_file:
-        data = in_file.read()
-    embed_notebook_metadata(notebook, METADATA_KEY, data)
-    clean_up()
 
 
 def generate_notebook_crate(notebook: Path, metadata: Path) -> ROCrate:
@@ -81,6 +63,15 @@ def generate_notebook_crate(notebook: Path, metadata: Path) -> ROCrate:
     return crate
 
 
+def id_ify(elements: Union[List[str], str]) -> List[dict]:
+    """Wraps elements in a list with @id keys
+    eg, convert ['a', 'b'] to [{'@id': 'a'}, {'@id': 'b'}]
+    """
+    # If the input is a string, make it a list
+    elements = [elements] if isinstance(elements, str) else elements
+    return [{"@id": element} for element in elements]
+
+
 def add_notebook(crate: ROCrate, notebook: Path, metadata: Path) -> None:
     """Adds notebook information to an ROCRate.
 
@@ -93,16 +84,25 @@ def add_notebook(crate: ROCrate, notebook: Path, metadata: Path) -> None:
     default_authors = extract_default_authors(metadata)
     notebook_metadata = extract_notebook_metadata(
         notebook,
-        {"title": notebook.name, "creators": default_authors, "description": ""},
+        {"title": notebook.name, "creators": default_authors, "description": "", "input": ""},
     )
 
     # Add the notebook to the crate
+    """
+    The data in the notebook is simpler format than rocrate, eg:
+        "title": "Farms to freeways notebook",
+        "description": "A sample notebook for the Farms to Freeways data",
+        "input": ["arcp://name,farms-to-freeways/corpus/root"],
+    """
     properties = {
+        "@type": ["File", "SoftwareApplication"],
         "name": notebook_metadata["title"],
         "description": notebook_metadata["description"],
+        "input": id_ify(notebook_metadata["input"]),
         "encodingFormat": "application/x-ipynb+json",
+        "conformsTo": id_ify("https://purl.archive.org/textcommons/profile#Notebook")
     }
-    file = crate.add_file(notebook, properties=properties)
+    file = crate.add(ContextEntity(crate, notebook.name, properties=properties))
 
     # Generate and add the authors to the crate
     authors = create_people(crate, notebook_metadata["creators"])
