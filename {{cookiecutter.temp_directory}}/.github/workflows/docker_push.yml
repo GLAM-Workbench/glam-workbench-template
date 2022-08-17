@@ -39,7 +39,7 @@ jobs:
         DOCKER_PASSWORD: {% raw %}${{ secrets.QUAY_PASSWORD }}{% endraw %}
         DOCKER_REGISTRY: "quay.io"
         BINDER_CACHE: true
-        IMAGE_NAME: {% raw %}{{ cookiecutter.container_repo_user }}/${{ github.event.repository.name }}{% endraw %}
+        IMAGE_NAME: {% raw %}glamworkbench/${{ github.event.repository.name }}{% endraw %}
 
     - name: Modify readme for DockerHub
       run: |
@@ -50,6 +50,6 @@ jobs:
       env:
         DOCKER_APIKEY: {% raw %}${{ secrets.API_KEY__QUAY_IO }}{% endraw %}
       with:
-        destination_container_repo: quay.io/{% raw %}{{ cookiecutter.container_repo_user }}/${{ github.event.repository.name }}{% endraw %}
+        destination_container_repo: quay.io/{% raw %}glamworkbench/${{ github.event.repository.name }}{% endraw %}
         provider: quay
         readme_file: 'README.md'
