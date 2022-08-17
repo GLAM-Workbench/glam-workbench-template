@@ -6,3 +6,4 @@ dev-requirements.txt
 requirements.txt
 {{cookiecutter.temp_directory}}/requirements.txt
 *.code-workspace
+.idea
