@@ -6,9 +6,9 @@ Current version: [v0.0.0](https://github.com/{{ cookiecutter.repository }}/relea
 
 ## Notebook topics
 
-* [Notebook title](notebook.ipynb) – this notebook does things
+* [Notebook title](sample_notebook.ipynb) – this notebook does things
 
-See the [GLAM Workbench for more details](https://glam-workbench.github.io/{{ cookiecutter.project_slug }}/).
+See the [GLAM Workbench for more details](https://glam-workbench.net/{{ cookiecutter.project_slug }}/).
 
 
 <!-- START RUN INFO -->
@@ -79,5 +79,5 @@ See the GLAM Workbench or [Zenodo](https://doi.org/10.5281/zenodo.3521724) for u
 
 ----
 
-This repository is part of the [GLAM Workbench](https://glam-workbench.github.io/).  
+This repository is part of the [GLAM Workbench](https://glam-workbench.net/).  
 

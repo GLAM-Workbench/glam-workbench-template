@@ -39,7 +39,7 @@ There's a few values that you need to set in `cookiecutter.json`.
 
 * `project_name` – this will be the name of the corresponding section in the GLAM Workbench and will probably be either the name of a GLAM organisation, or a specific collection, eg: 'Trove newspapers', 'National Museum of Australia'.
 * `project_description` – a brief description for the README
-* `creators` – add your name and ORCID id to the nested `creators_list`. This is used to pre-populate the `.zenodo.json` metadata file and can be changed later.
+* `creators` – add your name and ORCID id to the nested `creators_list`. This is used to pre-populate the `.zenodo.json` and `ro-create-metadata.json` files and can be changed later.
 
 The other values can be left as they are.
 
@@ -55,7 +55,7 @@ Your new repository will contain the following files, updated by `cookiecutter` 
 * `runtime.txt` – set Python version
 * `sample_notebook.ipynb` – a basic example notebook
 * `jupyter_config.json` – configuration for Voilá
-* `metadata.json` – a file containing your repository configuration values
+* `ro-crate-metadata.json` – an RO-Crate metadata file describing the repository
 * `.zenodo.json` – metadata for integration with Zenodo
 * `reclaim-manifest.jps` – config file to allow one-click installation on Reclaim Cloud
 * `.github/cache_pull_request.yml` – GitHub action that runs when a pull request is created, and builds and caches an image for testing on Binder
@@ -63,8 +63,9 @@ Your new repository will contain the following files, updated by `cookiecutter` 
 * `update_version.sh` – development utility script to update version numbers (see below for usage)
 * `pyproject.toml` – configuration for development environment
 * `.pre-commit-config.yaml` – configuration for development environment
-* `list_imports.py` – development utility script (see below for usage)
-* `test_and_lint.sh` – development utility script (see below for usage)
+* `scripts/update_crate.py` – after making changes to your repository, run this to update `ro-crate-metadata.json`
+* `scripts/list_imports.py` – development utility script (see below for usage)
+* `scripts/test_and_lint.sh` – development utility script (see below for usage)
 
 ## Setting up your local environment
 
@@ -161,7 +162,7 @@ For more fine-grained testing, you can use `nbval` to look for specific values i
 If you want to check and test a notebook in one hit, you can use the `test_and_lint.sh` script:
 
 ``` shell
-./test_and_lint.sh mynotebook.ipynb
+./scripts/test_and_lint.sh mynotebook.ipynb
 ```
 
 Before you run this script the first time, you might want to change the permissions to make sure it's executable:
@@ -178,7 +179,7 @@ As you develop your notebooks, you'll probably want to add some more Python pack
 * Run `pip-compile requirements.in` – to update `requirements.txt`
 * Run `pip-sync requirements.txt` – to install new packages
 
-If you've been using `pip` to install things directly rather than `pip-tools`, you might have lost track of which packages you've imported into your notebooks. The `list_imports.py` script looks for imports in notebooks and creates a `requirements-tocheck.in` file that you can check and copy into `requirements.in` as required. This won't include packages that aren't directly imported, and others where the package name is different to the import.
+If you've been using `pip` to install things directly rather than `pip-tools`, you might have lost track of which packages you've imported into your notebooks. The `scripts/list_imports.py` script looks for imports in notebooks and creates a `requirements-tocheck.in` file that you can check and copy into `requirements.in` as required. This won't include packages that aren't directly imported, and others where the package name is different to the import.
 
 ## Updating Python packages
 
@@ -223,9 +224,9 @@ See these [notes on version numbering](https://github.com/GLAM-Workbench/glam-wo
 
 To have versions automatically archived in Zenodo, you have to [give Zenodo access to your GitHub account](https://docs.github.com/en/repositories/archiving-a-github-repository/referencing-and-citing-content), and configure it to listen for any new releases from the repository.
 
-The `update_versions.sh` script helps you update various files so that you're ready to create a new release on GitHub. Just give it the name of the new version, eg: `./update_versions v0.1.0.`.
+The `scripts/update_versions.sh` script helps you update various files so that you're ready to create a new release on GitHub. Just give it the name of the new version, eg: `./update_versions v0.1.0.`.
 
 * Make sure notebooks are listed in `README.md`
-* Run the `update_versions.sh` script, supplying the tag of the new version. This will update `README.md` and `zenodo.json` with the new version details.
+* Run the `scripts/update_versions.sh` script, supplying the tag of the new version. This will update `README.md` and `zenodo.json` with the new version details.
 * Push changes to GitHub as above.
 * Go to GitHub and create a new release, using the version name as the release name and the tag.

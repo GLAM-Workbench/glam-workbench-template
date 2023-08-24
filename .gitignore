@@ -7,3 +7,5 @@ requirements.txt
 {{cookiecutter.temp_directory}}/requirements.txt
 *.code-workspace
 .idea
+.env
+cookiecutter-test.json

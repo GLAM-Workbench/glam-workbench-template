@@ -4,3 +4,4 @@
 requirements-tocheck.in
 dev-requirements.txt
 .idea
+.env

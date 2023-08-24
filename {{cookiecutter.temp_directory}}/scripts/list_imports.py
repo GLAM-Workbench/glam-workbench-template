@@ -11,7 +11,7 @@ python_path = os.path.dirname(sys.executable).replace('bin', 'lib')
 #print(python_path)
 
 imports = []
-for nb in Path.cwd().parent.glob('*.ipynb'):
+for nb in Path(__file__).resolve().parent.parent.glob('*.ipynb'):
     if not nb.name.startswith('.') and not nb.name.startswith('Untitled'):
         nb_json = json.loads(nb.read_bytes())
         for cell in nb_json['cells']:
@@ -36,6 +36,6 @@ for imported_mod in list(set(imports)):
                 external_imports.append(imported_mod)
     #print(external_imports)
 
-with Path('../requirements-tocheck.in').open('w') as req_file:
+with Path(Path(__file__).resolve().parent.parent, 'requirements-tocheck.in').open('w') as req_file:
     for mod in external_imports:
         req_file.write(mod + '\n')
