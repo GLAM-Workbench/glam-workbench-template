@@ -13,6 +13,5 @@
     "project_slug": "{{ cookiecutter.project_name | slugify }}",
     "temp_directory": "",
     "repository": "",
-    "repository_name": "",
-    "_extensions": ["jinja2_time.TimeExtension", "cookiecutter.extensions.JsonifyExtension", "cookiecutter.extensions.SlugifyExtension"]
+    "repository_name": ""
 }
