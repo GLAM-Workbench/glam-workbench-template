@@ -378,7 +378,7 @@ def remove_deleted_files(crate: ROCrate) -> None:
         if not Path(f.id).exists() and not f.id.startswith("http"):
             crate.delete(f)
         # If they're not referenced in CreateActions then delete
-        if f.id not in file_ids:
+        if f.id not in file_ids and not f.id.endswith(".ipynb"):
             crate.delete(f)
 
 
