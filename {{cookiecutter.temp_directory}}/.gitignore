@@ -3,3 +3,5 @@
 .ipynb_checkpoints
 requirements-tocheck.in
 dev-requirements.txt
+.idea
+.env

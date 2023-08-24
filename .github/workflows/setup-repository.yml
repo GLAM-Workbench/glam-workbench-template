@@ -40,7 +40,7 @@ jobs:
           python-version: "3.x"
 
       - name: Install dependencies
-        run: pip install cookiecutter
+        run: pip install cookiecutter rocrate
 
       - name: Scaffolding repository
         # cookiecutter is command-line utility to create projects from templates
@@ -52,9 +52,9 @@ jobs:
         # --output-dir    Where to output the generated project dir into
         run: cookiecutter . --no-input repository=${{ github.repository }} repository_name=${{ github.event.repository.name }} temp_directory=cookiecutter-temp
 
-      - name: Generate metadata
+      - name: Generate rocrate
         run: |
-          python extract_metadata.py
+          python create_crate.py
 
       - name: Prepare root directory
         shell: bash
@@ -63,7 +63,7 @@ jobs:
           find ./ -maxdepth 1 \
           ! -name '.git' \
           ! -name 'cookiecutter-temp' \
-          ! -name 'metadata.json' \
+          ! -name 'ro-crate-metadata.json' \
           ! -name '.' \
           ! -exec rm -rf {} +
 
