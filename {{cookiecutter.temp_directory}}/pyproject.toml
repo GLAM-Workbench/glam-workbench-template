@@ -4,3 +4,5 @@ flake8 = [
 ]
 [tool.pytest.ini_options]
 addopts = "--ignore-glob=Untitled* --ignore=snippets.ipynb --ignore-glob=draft*"
+[tool.isort]
+profile = "black"

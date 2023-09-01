@@ -10,3 +10,4 @@ rocrate @ git+https://github.com/ResearchObject/ro-crate-py.git@dc3f75b0d0390ded
 giturlparse
 requests
 python-dotenv
+jupyterlab-code-formatter

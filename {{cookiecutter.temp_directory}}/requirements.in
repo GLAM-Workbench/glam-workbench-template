@@ -4,3 +4,4 @@ voila-material @ git+https://github.com/GLAM-Workbench/voila-material.git
 pandas
 requests
 altair
+jupyter-archive
