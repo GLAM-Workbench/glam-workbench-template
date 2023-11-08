@@ -6,7 +6,8 @@ isort
 flake8
 nbqa
 pre-commit
-rocrate @ git+https://github.com/ResearchObject/ro-crate-py.git@dc3f75b0d0390dedbf9a830b6325b76dba468f1f
+rdflib > 6.0.1 # To avoid problems with rdflib-json
+rocrate
 giturlparse
 requests
 python-dotenv
