@@ -31,6 +31,21 @@ METADATA_LICENCE = {
     "url": "https://creativecommons.org/publicdomain/zero/1.0/",
 }
 
+NKC_LICENCE = {
+    "@id": "http://rightsstatements.org/vocab/NKC/1.0/",
+    "@type": "CreativeWork",
+    "description": "The organization that has made the Item available reasonably believes that the Item is not restricted by copyright or related rights, but a conclusive determination could not be made.",
+    "name": "No Known Copyright",
+    "url": "http://rightsstatements.org/vocab/NKC/1.0/"
+}
+CNE_LICENCE = {
+    "@id": "http://rightsstatements.org/vocab/CNE/1.0/",
+    "@type": "CreativeWork",
+    "description": "The copyright and related rights status of this Item has not been evaluated.",
+    "name": "Copyright Not Evaluated",
+    "url": "http://rightsstatements.org/vocab/CNE/1.0/"
+}
+
 PYTHON = {
     "@id": "https://www.python.org/downloads/release/python-31012/",
     "version": "3.10.12",
@@ -42,7 +57,7 @@ PYTHON = {
 DEFAULT_AUTHORS = [
     {
         "name": "Sherratt, Tim",
-        "orcid": "0000-0001-7956-4498",
+        "orcid": "https://orcid.org/0000-0001-7956-4498",
         "mainEntityOfPage": "https://timsherratt.au",
     }
 ]
@@ -53,18 +68,17 @@ GLAM_WORKBENCH = {
     "name": "GLAM Workbench",
     "url": "https://glam-workbench.net/",
     "description": "A collection of tools, tutorials, examples, and hacks to help researchers work with data from galleries, libraries, archives, and museums (the GLAM sector).",
-    "author": [{"@id": "0000-0001-7956-4498"}],
+    "author": [{"@id": "https://orcid.org/0000-0001-7956-4498"}],
 }
 
 
-def main(version, data_repo):
+def main(version, data_repo, data_path):
     # Make working directory the parent of the scripts directory
     os.chdir(Path(__file__).resolve().parent.parent)
     # Get a list of paths to notebooks in the cwd
     notebooks = get_notebooks()
-    print(notebooks)
     # Update the crate
-    update_crate(version, data_repo, notebooks)
+    update_crate(version, data_repo, data_path, notebooks)
 
 
 def get_notebooks():
@@ -145,27 +159,30 @@ def add_people(crate, authors):
     return persons
 
 
-def get_file_stats(datafile):
+def get_file_stats(datafile, data_path):
     """
     Try to get the file size and last modified date of the datafile.
     """
-    file_name = datafile.split("/")[-1]
+    file_name = datafile.rstrip("/").split("/")[-1]
     local_file = None
     # Look for local copy of data file in likely locations
-    for location in [".", "data"]:
-        file_path = Path(location, file_name)
-        if file_path.exists():
-            local_file = file_path
-            break
+    file_path = Path(data_path, file_name)
+
     # If there's a local copy use that to derive stats
     # This means we can get an accurate date modified value (GitHub only gives date committed).
-    if local_file:
+    if file_path.exists() and file_path.is_dir():
+        size = None
+        rows = len(list(file_path.glob("*")))
+        print(rows)
+        stats = file_path.stat()
+        date = datetime.datetime.fromtimestamp(stats.st_mtime).strftime("%Y-%m-%d")
+    elif file_path.exists():
         # Get file stats from local filesystem
-        stats = local_file.stat()
+        stats = file_path.stat()
         size = stats.st_size
         date = datetime.datetime.fromtimestamp(stats.st_mtime).strftime("%Y-%m-%d")
         rows = 0
-        with local_file.open("r") as df:
+        with file_path.open("r") as df:
             for line in df:
                 rows += 1
     elif datafile.startswith("http"):
@@ -178,8 +195,7 @@ def get_file_stats(datafile):
             gh_parts = ghparse(datafile)
 
             # API url to get the latest commit for this file
-            gh_commit_url = f"https://api.github.com/repos/{gh_parts.owner}/{gh_parts.repo}/commits?path={gh_parts.path.split('/')[-1]}"
-            print(gh_commit_url)
+            gh_commit_url = f"https://api.github.com/repos/{gh_parts.owner}/{gh_parts.repo}/commits?path={gh_parts.path_raw.split('/')[-1]}"
             try:
                 response = requests.get(gh_commit_url)
 
@@ -190,12 +206,15 @@ def get_file_stats(datafile):
                 date = None
 
             # Different API endpoint for file data
-            gh_file_url = f"https://api.github.com/repos/{gh_parts.owner}/{gh_parts.repo}/contents/{gh_parts.path.split('/')[-1]}"
+            gh_file_url = f"https://api.github.com/repos/{gh_parts.owner}/{gh_parts.repo}/contents/{gh_parts.path_raw.split('/')[-1]}"
             try:
                 response = requests.get(gh_file_url)
-
+                contents_data = response.json()
                 # Get the file size
-                size = response.json()["size"]
+                try:
+                    size = contents_data["size"]
+                except TypeError:
+                    size = None
 
             except KeyError:
                 size = None
@@ -219,7 +238,7 @@ def get_default_gh_branch(url):
         return response.json().get("default_branch")
 
 
-def add_files(crate, datafiles, data_repo):
+def add_files(crate, datafiles, data_repo, data_path):
     """
     Add data files to the crate.
     Tries to extract some basic info about files (size, date) before adding them.
@@ -236,7 +255,7 @@ def add_files(crate, datafiles, data_repo):
         ):
             # If this is a data repo crate use the file name (not full url) as the id
             if data_repo and data_repo in datafile:
-                file_id = datafile.split("/")[-1]
+                file_id = datafile.rstrip("/").split("/")[-1]
             else:
                 file_id = datafile
 
@@ -252,7 +271,7 @@ def add_files(crate, datafiles, data_repo):
                 file_url = datafile
 
             # Get date and size info
-            date, size, rows = get_file_stats(datafile)
+            date, size, rows = get_file_stats(datafile, data_path)
 
             # Check to see if there's already an entry for this file in the crate
             file_entity = crate.get(file_id)
@@ -264,10 +283,8 @@ def add_files(crate, datafiles, data_repo):
 
             # Otherwise we'll define default properties for a new file entity
             else:
-                name = datafile.split("/")[-1]
+                name = datafile.rstrip("/").split("/")[-1]
                 properties = {
-                    "@id": file_id,
-                    "@type": ["File", "Dataset"],
                     "name": name,
                     "url": file_url,
                 }
@@ -288,6 +305,8 @@ def add_files(crate, datafiles, data_repo):
             # If it's a CSV add number of rows
             if rows and properties.get("encodingFormat") == "text/csv":
                 properties["size"] = rows - 1
+            elif rows:
+                properties["size"] = rows
 
             # If it's a web link add today's date to indicate when it was last accessed
             if datafile.startswith("http"):
@@ -296,21 +315,26 @@ def add_files(crate, datafiles, data_repo):
                 )
 
             # Add/update the file entity and add to the list of file entities
-            file_entities.append(crate.add_file(file_id, properties=properties))
-
+            file_path = Path(".", data_path, file_id)
+            if file_path.is_dir():
+                properties["@type"] = "Dataset"
+                file_entities.append(crate.add_dataset(file_path, properties=properties))
+            else:
+                properties["@type"] = ["File", "Dataset"]
+                file_entities.append(crate.add_file(file_path, properties=properties))
     return file_entities
 
 
-def add_action(crate, notebook, input_files, output_files):
+def add_action(crate, notebook, input_files, output_files, query):
     """
     Links a notebook and associated datafiles through a CreateAction.
     """
+    print(output_files)
     # Create an action id from the notebook name
     action_id = f"{notebook.id.split('/')[-1].replace('.ipynb', '')}_run"
 
     # Get a list of dates from the output files
-    dates = [f.properties()["dateModified"] for f in output_files]
-
+    dates = [f.properties()["dateModified"] for f in output_files if "dateModified" in f.properties()]
     # Find the latest date to use as the endDate for the action
     try:
         last_date = sorted(dates)[-1]
@@ -318,7 +342,7 @@ def add_action(crate, notebook, input_files, output_files):
     # There's no dates (or no output files)
     except IndexError:
         # Use the date the notebook was last modified
-        last_date, _ = get_file_stats(notebook.id)
+        last_date, _, _ = get_file_stats(notebook.id)
 
     # Check to see if this action is already in the crate
     action_current = crate.get(action_id)
@@ -333,6 +357,9 @@ def add_action(crate, notebook, input_files, output_files):
             "actionStatus": {"@id": "http://schema.org/CompletedActionStatus"},
             "name": f"Run of notebook: {notebook.id.split('/')[-1]}",
         }
+
+        if query:
+            properties["query"] = query
 
     # Set endDate to latest file modification date
     properties["endDate"] = last_date
@@ -354,13 +381,14 @@ def creates_data(data_repo, notebook_metadata):
     Check to see if a notebook creates a data file.
     """
     if data_repo:
-        for result in notebook_metadata["result"]:
-            if data_repo in result:
-                return True
+        for action in notebook_metadata["action"]:
+            for result in action["result"]:
+                if data_repo in result:
+                    return True
     return False
 
 
-def add_notebook(crate, notebook, data_repo):
+def add_notebook(crate, notebook, data_repo, data_path):
     """Adds notebook information to an ROCRate.
 
     Parameters:
@@ -377,8 +405,7 @@ def add_notebook(crate, notebook, data_repo):
             "name": notebook.name,
             "author": [],
             "description": "",
-            "object": [],
-            "result": [],
+            "action": []
         },
     )
     # print(notebook_metadata)
@@ -429,19 +456,23 @@ def add_notebook(crate, notebook, data_repo):
                 "url": nb_url,
             }
 
-        # Add input files from 'object' property
-        input_files = add_files(crate, notebook_metadata["object"], data_repo)
+        # Add input files from 'object' property of actions
+        #nb_inputs = [a["object"] for a in notebook_metadata.get("action", [])]
+        #input_files = add_files(crate, nb_inputs, data_repo)
 
         # Add output files from 'result' property
-        output_files = add_files(crate, notebook_metadata["result"], data_repo)
+        #nb_outputs = [a["result"] for a in notebook_metadata.get("action", [])]
+        #output_files = add_files(crate, nb_outputs, data_repo)
 
         # Add or update the notebook entity
         # (if there's an existing entry it will be overwritten)
         nb_new = crate.add_file(nb_id, properties=properties)
 
         # Add a CreateAction that links the notebook run with the input and output files
-        if input_files or output_files:
-            add_action(crate, nb_new, input_files, output_files)
+        for action in notebook_metadata.get("action", []):
+            input_files = add_files(crate, action.get("object", []), data_repo, data_path)
+            output_files = add_files(crate, action.get("result", []), data_repo, data_path)
+            add_action(crate, nb_new, input_files, output_files, action.get("query", ""))
 
         # If the notebook has author info, add people to crate
         if notebook_metadata["author"]:
@@ -460,7 +491,7 @@ def add_notebook(crate, notebook, data_repo):
                 nb_new.append_to("author", person)
 
 
-def remove_deleted_files(crate):
+def remove_deleted_files(crate, data_path):
     """
     Loops through File entities checking to see if they exist in local filesystem.
     If they don't then they're removed from the crate.
@@ -476,7 +507,7 @@ def remove_deleted_files(crate):
     # Loop through File entities
     for f in crate.get_by_type("File"):
         # If they don't exist and they're not urls, then delete
-        if not Path(f.id).exists() and not f.id.startswith("http"):
+        if not Path(data_path, f.id).exists() and not f.id.startswith("http"):
             crate.delete(f)
         # If they're not referenced in CreateActions then delete
         if f.id not in file_ids and not f.id.endswith(".ipynb"):
@@ -544,7 +575,7 @@ def get_gw_docs(repo_name):
         return {"url": gw_url, "title": gw_title}
 
 
-def update_crate(version, data_repo, notebooks):
+def update_crate(version, data_repo, data_path, notebooks):
     """Creates a parent crate in the supplied directory.
 
     Parameters:
@@ -586,7 +617,6 @@ def update_crate(version, data_repo, notebooks):
                 "description": description,
                 "url": repo_url,
                 "author": id_ify([a["orcid"] for a in DEFAULT_AUTHORS]),
-                "mainEntityOfPage": id_ify(gw_link.get("url")),
             }
         )
 
@@ -645,16 +675,18 @@ def update_crate(version, data_repo, notebooks):
         }
     )
     add_context_entity(crate, METADATA_LICENCE)
+    add_context_entity(crate, NKC_LICENCE)
+    add_context_entity(crate, CNE_LICENCE)
 
     # Add Python for programming language
     add_context_entity(crate, PYTHON)
 
     # Process notebooks
     for notebook in notebooks:
-        add_notebook(crate, notebook, data_repo)
+        add_notebook(crate, notebook, data_repo, data_path)
 
     # Remove files from crate if they're no longer in the repo
-    remove_deleted_files(crate)
+    remove_deleted_files(crate, data_path)
 
     # Remove authors from crate if they're not referenced by any entities
     remove_unreferenced_authors(crate)
@@ -669,5 +701,6 @@ if __name__ == "__main__":
         "--version", type=str, help="New version number", required=False
     )
     parser.add_argument("--data-repo", type=str, default="", required=False)
+    parser.add_argument("--data-path", type=str, default=".", required=False)
     args = parser.parse_args()
-    main(args.version, args.data_repo)
+    main(args.version, args.data_repo, args.data_path)
