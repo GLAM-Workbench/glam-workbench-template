@@ -6,9 +6,14 @@ isort
 flake8
 nbqa
 pre-commit
-rdflib > 6.0.1 # To avoid problems with rdflib-json
+rdflib
 rocrate
 giturlparse
 requests
 python-dotenv
 jupyterlab-code-formatter
+PyGithub
+GitPython
+beautifulsoup4
+lxml
+arrow

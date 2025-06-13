@@ -9,3 +9,4 @@ requirements.txt
 .idea
 .env
 cookiecutter-test.json
+.python-version
