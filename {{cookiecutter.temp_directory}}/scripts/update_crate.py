@@ -1,796 +1,626 @@
 import os
-import argparse
-import datetime
-import requests
-from giturlparse import parse as ghparse
-from git import Repo
 from pathlib import Path
-import mimetypes
-from bs4 import BeautifulSoup
 from rocrate.rocrate import ROCrate
 from rocrate.model.person import Person
 from rocrate.model.data_entity import DataEntity
 from rocrate.model.contextentity import ContextEntity
-from extract_metadata import (
-    extract_notebook_metadata,
-)
+from git import Repo
+from git.exc import InvalidGitRepositoryError, GitCommandError
+import json
+import argparse
+import datetime
+import nbformat
+import sys
+import requests
+from bs4 import BeautifulSoup
+from github import Github
+import re
+import arrow
+import git
 
-NOTEBOOK_EXTENSION = ".ipynb"
-
-DEFAULT_LICENCE = {
-    "@id": "https://spdx.org/licenses/MIT",
-    "name": "MIT License",
-    "@type": "CreativeWork",
-    "url": "https://spdx.org/licenses/MIT.html",
-}
-
-METADATA_LICENCE = {
-    "@id": "https://creativecommons.org/publicdomain/zero/1.0/",
-    "name": "CC0 Public Domain Dedication",
-    "@type": "CreativeWork",
-    "url": "https://creativecommons.org/publicdomain/zero/1.0/",
-}
-
-NKC_LICENCE = {
-    "@id": "http://rightsstatements.org/vocab/NKC/1.0/",
-    "@type": "CreativeWork",
-    "description": "The organization that has made the Item available reasonably believes that the Item is not restricted by copyright or related rights, but a conclusive determination could not be made.",
-    "name": "No Known Copyright",
-    "url": "http://rightsstatements.org/vocab/NKC/1.0/"
-}
-CNE_LICENCE = {
-    "@id": "http://rightsstatements.org/vocab/CNE/1.0/",
-    "@type": "CreativeWork",
-    "description": "The copyright and related rights status of this Item has not been evaluated.",
-    "name": "Copyright Not Evaluated",
-    "url": "http://rightsstatements.org/vocab/CNE/1.0/"
-}
-
-PYTHON = {
-    "@id": "https://www.python.org/downloads/release/python-31012/",
-    "version": "3.10.12",
-    "name": "Python 3.10.12",
-    "url": "https://www.python.org/downloads/release/python-31012/",
-    "@type": ["ComputerLanguage", "SoftwareApplication"],
-}
-
-DEFAULT_AUTHORS = [
-    {
-        "name": "Sherratt, Tim",
-        "orcid": "https://orcid.org/0000-0001-7956-4498",
-        "mainEntityOfPage": "https://timsherratt.au",
-    }
+LICENCES = json.loads(Path("scripts", "licences.json").read_text())
+CONTEXT_PROPERTIES = [
+    "author",
+    "action",
+    "workExample",
+    "mainEntityOfPage",
+    "subjectOf",
+    "isBasedOn",
+    "distribution",
+    "isPartOf",
+    "license"
 ]
 
-GLAM_WORKBENCH = {
-    "@id": "https://glam-workbench.net/",
-    "@type": "CreativeWork",
-    "name": "GLAM Workbench",
-    "url": "https://glam-workbench.net/",
-    "description": "A collection of tools, tutorials, examples, and hacks to help researchers work with data from galleries, libraries, archives, and museums (the GLAM sector).",
-    "author": [{"@id": "https://orcid.org/0000-0001-7956-4498"}],
-}
 
-
-def main(version, data_repo, data_paths):
+def main(crate_path, defaults, version, data_repo):
     # Make working directory the parent of the scripts directory
     os.chdir(Path(__file__).resolve().parent.parent)
-    # Get a list of paths to notebooks in the cwd
-    notebooks = get_notebooks()
+    crate_maker = CrateMaker(crate_path, defaults=defaults, version=version, data_repo=data_repo)
     # Update the crate
-    update_crate(version, data_repo, data_paths, notebooks)
+    crate_maker.update_crate()
 
 
-def get_notebooks():
-    """Returns a list of paths to jupyter notebooks in the given directory
-
-    Parameters:
-        dir: The path to the directory in which to search.
-
-    Returns:
-        Paths of the notebooks found in the directory
-    """
-    # files = [Path(file) for file in os.listdir()]
-    files = Path(".").glob("*.ipynb")
-    is_notebook = lambda file: not file.name.lower().startswith(("draft", "untitled", "index"))
-    return list(filter(is_notebook, files))
+def listify(value):
+    if not isinstance(value, list):
+        return [value]
+    return value
 
 
-def id_ify(elements):
-    """Wraps elements in a list with @id keys
-    eg, convert ['a', 'b'] to [{'@id': 'a'}, {'@id': 'b'}]
-    """
-    # If the input is a string, make it a list
-    # elements = [elements] if isinstance(elements, str) else elements
-    # Nope - single elements shouldn't be lists, see: https://www.researchobject.org/ro-crate/1.1/appendix/jsonld.html
-    if isinstance(elements, str):
-        return {"@id": elements}
+def delistify(value):
+    if isinstance(value, list) and (len(value) == 1 or len(set(value)) == 1):
+        return value[0]
     else:
-        return [{"@id": element} for element in elements]
+        return value
 
 
-def add_people(crate, authors):
-    """Converts a list of authors to a list of Persons to be embedded within an ROCrate
+class CrateMaker:
 
-    Parameters:
-        crate: The rocrate in which the authors will be created.
-        authors:
-            A list of author information.
-            Expects a dict with at least a 'name' value ('Surname, Givenname')
-            If there's an 'orcid' this will be used as the id (and converted to a uri if necessary)
-    Returns:
-        A list of Persons.
-    """
-    persons = []
+    def __init__(self, crate_path="./", defaults=None, version=None, data_repo=None):
+        # Make working directory the parent of the scripts directory
+        os.chdir(Path(__file__).resolve().parent.parent)
+        self.defaults = defaults
+        self.crate_path = crate_path
+        self.version = version
+        self.data_repo = data_repo
 
-    # Loop through list of authors
-    for author in authors:
-        # If there's no orcid, create an id from the name
-        if "orcid" not in author or not author["orcid"]:
-            author_id = f"#{author['name'].replace(', ', '_')}"
-
-        # If there's an orcid but it's not a url, turn it into one
-        elif not author["orcid"].startswith("http"):
-            author_id = f"https://orcid.org/{author['orcid']}"
-
-        # Otherwise we'll just use the orcid as the id
-        else:
-            author_id = author["orcid"]
-
-        # Check to see if there's already an entry for this person in the crate
-        author_current = crate.get(author_id)
-
-        # If there's already an entry we'll update the existing properties
-        if author_current:
-            properties = author_current.properties()
-
-            # Update the name in case it has changed
-            # properties.update({"name": author["name"]})
-            for key, value in author.items():
-                properties.update({key: value})
-
-        # Otherwise set default properties
-        else:
-            properties = {"name": author["name"]}
-
-        # Add/update the person record and add to the list of persons to return
-        persons.append(crate.add(Person(crate, author_id, properties=properties)))
-
-    return persons
-
-def find_local_file(file_name, local_path):
-    # Look for local copy of data file in likely locations
-    file_path = Path(local_path, file_name)
-    if file_path.exists():
-        return file_path
-
-
-def get_file_stats(datafile, local_path):
-    """
-    Try to get the file size and last modified date of the datafile.
-    """
-    file_name = datafile.rstrip("/").split("/")[-1]
-    local_file = find_local_file(file_name, local_path)
-    # If there's a local copy use that to derive stats
-    # This means we can get an accurate date modified value (GitHub only gives date committed).
-    if local_file and local_file.is_dir():
-        size = None
-        rows = len(list(local_file.glob("*")))
-        # print(rows)
-        stats = local_file.stat()
-        date = datetime.datetime.fromtimestamp(stats.st_mtime).strftime("%Y-%m-%d")
-    elif local_file:
-        # Get file stats from local filesystem
-        stats = local_file.stat()
-        size = stats.st_size
-        date = datetime.datetime.fromtimestamp(stats.st_mtime).strftime("%Y-%m-%d")
-        rows = 0
-        with local_file.open("r") as df:
-            for line in df:
-                rows += 1
-    elif datafile.startswith("http"):
-        # I don't think I want to download the whole file, so set to None
-        rows = None
-        # Process GitHub links
-        if "github.com" in datafile:
-            # the ghparser doesn't seem to like 'raw' urls
-            datafile = datafile.replace("/raw/", "/blob/")
-            gh_parts = ghparse(datafile)
-
-            # API url to get the latest commit for this file
-            gh_commit_url = f"https://api.github.com/repos/{gh_parts.owner}/{gh_parts.repo}/commits?path={gh_parts.path_raw.split('/')[-1]}"
+    def id_ify(self, elements):
+        """Wraps elements in a list with @id keys
+        eg, convert ['a', 'b'] to [{'@id': 'a'}, {'@id': 'b'}]
+        """
+        # If the input is a string, make it a list
+        # elements = [elements] if isinstance(elements, str) else elements
+        # Nope - single elements shouldn't be lists, see: https://www.researchobject.org/ro-crate/1.1/appendix/jsonld.html
+        if isinstance(elements, str):
+            return {"@id": elements}
+        elif isinstance(elements, list):
             try:
-                response = requests.get(gh_commit_url)
+                return [{"@id": e.id} for e in elements]
+            except AttributeError:
+                return [{"@id": element} for element in elements]
 
-                # Get the date of the last commit
-                date = response.json()[0]["commit"]["committer"]["date"][:10]
-
-            except (IndexError, KeyError):
-                date = None
-
-            # Different API endpoint for file data
-            gh_file_url = f"https://api.github.com/repos/{gh_parts.owner}/{gh_parts.repo}/contents/{gh_parts.path_raw.split('/')[-1]}"
-            try:
-                response = requests.get(gh_file_url)
-                contents_data = response.json()
-                # Get the file size
-                try:
-                    size = contents_data["size"]
-                except TypeError:
-                    size = None
-
-            except KeyError:
-                size = None
-
+    def creates_data(self, notebook):
+        """
+        Check to see if a notebook creates a file in the specified data repo.
+        """
+        if not self.data_repo:
+            return True
         else:
-            # If the file is online, get size from content headers
-            size = requests.head(datafile).headers.get("Content-length")
-            date = None
+            metadata = self.get_nb_metadata(notebook)
+            owner, repo = self.get_gh_parts(self.data_repo)
+            for action in metadata.get("action", []):
+                for result in action.get("result", []):
+                    if f"{owner}/{repo}" in result.get("url", ""):
+                        return True
+        return False
 
-    return date, size, rows
+    def get_notebooks(self, path="."):
+        """Returns a list of paths to jupyter notebooks in the given directory
 
+        Parameters:
+            dir: The path to the directory in which to search.
 
-def get_default_gh_branch(url):
-    # Process GitHub links
-    if "github.com" in url:
-        # the ghparser doesn't seem to like 'raw' urls
-        url = url.replace("/raw/", "/blob/")
-        gh_parts = ghparse(url)
-        gh_repo_url = f"https://api.github.com/repos/{gh_parts.owner}/{gh_parts.repo}"
-        response = requests.get(gh_repo_url)
-        return response.json().get("default_branch")
+        Returns:
+            Paths of the notebooks found in the directory
+        """
+        files = Path(path).glob("*.ipynb")
+        is_notebook = lambda file: not file.name.lower().startswith(
+            ("draft", "untitled", "index")
+        ) and self.creates_data(file)
+        return list(filter(is_notebook, files))
 
-def add_files(crate, action, data_type, gw_url, data_repo, data_paths):
-    """
-    Add data files to the crate.
-    Tries to extract some basic info about files (size, date) before adding them.
-    """
-    file_entities = []
+    def update_properties(self, entry, updates, exclude=[]):
+        for key, value in updates.items():
+            if key in CONTEXT_PROPERTIES:
+                self.add_entities(entry, key, listify(value))
+            elif not key.startswith("@") and key not in exclude:
+                entry[key] = value
+        return entry
 
-    # Loop through list of datafiles
-    for df_data in action.get(data_type, []):
-        datafile = df_data["url"]
-        local_path = action.get("local_path", ".")
+    def add_people(self, authors):
+        """Converts a list of authors to a list of Persons to be embedded within an ROCrate
 
-        # Check if file exists (or is a url)
-        if (
-            Path(datafile).exists()
-            or (data_repo == "" and datafile.startswith("http"))
-            or (data_repo and data_repo in datafile)
-        ):
-            # If this is a data repo crate use the file name (not full url) as the id
-            if data_repo and data_repo in datafile:
-                file_id = datafile.rstrip("/").split("/")[-1]
+        Parameters:
+            crate: The rocrate in which the authors will be created.
+            authors:
+                A list of author information.
+                Expects a dict with at least a 'name' value ('Surname, Givenname')
+                If there's an 'orcid' this will be used as the id (and converted to a uri if necessary)
+        Returns:
+            A list of Persons.
+        """
+        added = []
+        # Loop through list of authors
+        for author_data in authors:
+            # If there's no orcid, create an id from the name
+            if not author_data.get("orcid"):
+                author_id = f"#{author_data['name'].replace(', ', '_')}"
+
+            # If there's an orcid but it's not a url, turn it into one
+            elif not author_data["orcid"].startswith("http"):
+                author_id = f"https://orcid.org/{author_data['orcid']}"
+
+            # Otherwise we'll just use the orcid as the id
             else:
-                file_id = datafile
-            # To construct a full GitHub url to a file we need to find the repo url and default branch
-            if not datafile.startswith("http"):
-                repo = Repo(".")
-                repo_url = repo.git.config("--get", "remote.origin.url").replace(
-                    ".git", "/"
-                )
-                gh_branch = get_default_gh_branch(repo_url)
-                file_url = f"{repo_url}blob/{gh_branch}/{datafile}"
-            else:
-                file_url = datafile
+                author_id = author_data["orcid"]
+            # Check to see if there's already an entry for this person in the crate
+            author = self.crate.get(author_id)
 
-            # Get date and size info
-            date, size, rows = get_file_stats(datafile, local_path)
+            # If there's already an entry we'll update the existing properties
+            if not author:
+                props = {"name": author_data["name"]}
+                author = self.crate.add(Person(self.crate, author_id, properties=props))
+            added.append(self.update_properties(author, author_data, exclude=["orcid"]))
+        return added
 
-            # Check to see if there's already an entry for this file in the crate
-            file_entity = crate.get(file_id)
+    def add_update_action(self, version):
+        """
+        Adds an UpdateAction to the crate when the repo version is updated.
+        """
+        # Create an id for the action using the version number
+        action_id = f"create_version_{version.replace('.', '_')}"
 
-            # If there's already an entry for this file, we'll keep it's properties
-            # but modify the date, size etc later
-            if file_entity:
-                properties = file_entity.properties()
-
-            # Otherwise we'll define default properties for a new file entity
-            else:
-                name = datafile.rstrip("/").split("/")[-1]
-                properties = {
-                    "name": name,
-                    "url": file_url,
-                }
-
-                # Add contextual entities for data repo associated with file
-                # If this is a data repo crate, this is not necessary as the crate root will have this
-                if not data_repo:
-                    gw_page = action.get("mainEntityOfPage")
-                    if data_repo_url := action.get("isPartOf"):
-                        properties["isPartOf"] = id_ify(data_repo_url)
-                        data_rocrate = {
-                            "@id": data_repo_url,
-                            "@type": "Dataset",
-                            "url": data_repo_url,
-                            "name": data_repo_url.rstrip("/").split("/")[-1]
-                        }
-                        if data_roc_description := action.get("description"):
-                            data_rocrate["description"] = data_roc_description
-                        if gw_page:
-                            add_gw_page_link(crate, gw_page)
-                            data_rocrate["mainEntityOfPage"] = id_ify(gw_page)
-                        add_context_entity(crate, data_rocrate)
-                    
-                # Guess the encoding type from extension
-                encoding = mimetypes.guess_type(datafile)[0]
-                if encoding:
-                    properties["encodingFormat"] = encoding
-
-                if description := df_data.get("description"):
-                    properties["description"] = description
-                if license := df_data.get("license"):
-                    properties["license"] = id_ify(license)
-
-            # Add/update modified date
-            if date:
-                properties["dateModified"] = date
-
-            # Add/update file size
-            if size:
-                properties["contentSize"] = size
-
-            # If it's a CSV add number of rows
-            if rows and properties.get("encodingFormat") == "text/csv":
-                properties["size"] = rows - 1
-            elif rows:
-                properties["size"] = rows
-
-            # If it's a web link add today's date to indicate when it was last accessed
-            if datafile.startswith("http"):
-                properties["sdDatePublished"] = datetime.datetime.now().strftime(
-                    "%Y-%m-%d"
-                )
-
-            # Add/update the file entity and add to the list of file entities
-            local_file = find_local_file(datafile.rstrip("/").split("/")[-1], action.get("local_path", "."))
-            print(datafile, local_file, file_id)
-            if data_repo:
-                crate_id = local_file
-            else:
-                crate_id = file_id
-            if local_file and local_file.is_dir():
-                properties["@type"] = "Dataset"
-                file_entities.append(crate.add_dataset(crate_id, properties=properties))
-            elif local_file:
-                properties["@type"] = ["File", "Dataset"]
-                file_entities.append(crate.add_file(crate_id, properties=properties))
-            else:
-                file_entities.append(crate.add_file(crate_id, properties=properties))
-    return file_entities
-
-
-def add_action(crate, notebook, input_files, output_files, query, index):
-    """
-    Links a notebook and associated datafiles through a CreateAction.
-    """
-    # Create an action id from the notebook name
-    action_id = f"{notebook.id.split('/')[-1].replace('.ipynb', '')}_run_{index}"
-
-    # Get a list of dates from the output files
-    dates = [f.properties()["dateModified"] for f in output_files if "dateModified" in f.properties()]
-    # Find the latest date to use as the endDate for the action
-    try:
-        last_date = sorted(dates)[-1]
-
-    # There's no dates (or no output files)
-    except IndexError:
-        # Use the date the notebook was last modified
-        last_date, _, _ = get_file_stats(notebook.id, ["."])
-
-    # Check to see if this action is already in the crate
-    action_current = crate.get(action_id)
-    if action_current:
-        # Remove current files from existing action entity
-        properties = {"object": [], "result": []}
-    else:
-        # Default properties for new action
+        # Set basic properties for action
         properties = {
-            "@type": "CreateAction",
-            "instrument": id_ify(notebook.id),
+            "@type": "UpdateAction",
+            "endDate": datetime.datetime.now().strftime("%Y-%m-%d"),
+            "name": f"Create version {version}",
             "actionStatus": {"@id": "http://schema.org/CompletedActionStatus"},
-            "name": f"Run of notebook: {notebook.id.split('/')[-1]}",
         }
 
-        if query:
-            properties["query"] = query
+        # Create entity
+        self.crate.add(ContextEntity(self.crate, action_id, properties=properties))
 
-    # Set endDate to latest file modification date
-    properties["endDate"] = last_date
+    def add_context_entity(self, entity):
+        """
+        Adds a ContextEntity to the crate.
 
-    # Add or update action
-    action_new = crate.add(ContextEntity(crate, action_id, properties=properties))
+        Parameters:
+            crate: the current ROCrate
+            entity: A JSONLD ready dict containing "@id" and "@type" values
+        """
+        return self.crate.add(
+            ContextEntity(self.crate, entity["@id"], properties=entity)
+        )
 
-    # Add input files to action
-    for input in input_files:
-        action_new.append_to("object", input)
-
-    # Add output files to action
-    for output in output_files:
-        action_new.append_to("result", output)
-
-
-def creates_data(data_repo, notebook_metadata):
-    """
-    Check to see if a notebook creates a data file.
-    """
-    if data_repo:
-        for action in notebook_metadata["action"]:
-            for result in action["result"]:
-                if data_repo in result["url"]:
-                    return True
-    return False
-
-
-def add_notebook(crate, notebook, data_repo, data_path, gw_url):
-    """Adds notebook information to an ROCRate.
-
-    Parameters:
-        crate: The rocrate to update.
-        notebook: The notebook to add to the rocrate
-    """
-    # Get the crate root
-    root = crate.get("./").properties()
-
-    # Extract embedded metadata from the notebook
-    notebook_metadata = extract_notebook_metadata(
-        notebook,
-        {
-            "name": notebook.name,
-            "author": [],
-            "description": "",
-            "action": [],
-            "mainEntityOfPage": ""
-        },
-    )
-    # print(notebook_metadata)
-    has_data = creates_data(data_repo, notebook_metadata)
-
-    # If this is a data repo crate change nb ids to full urls
-    if has_data:
-        repo = Repo(".")
-        repo_url = repo.git.config("--get", "remote.origin.url").replace(".git", "/")
-        gh_branch = get_default_gh_branch(repo_url)
-        nb_id = f"{repo_url}blob/{gh_branch}/{notebook.name}"
-        nb_url = nb_id
-    else:
-        repo_url = root["url"]
-        gh_branch = get_default_gh_branch(repo_url)
-        nb_id = notebook
-        nb_url = f"{repo_url}blob/{gh_branch}/{notebook.name}"
-
-    # If this is a data repo crate only add notebooks that generate data
-    if not data_repo or has_data:
-        # Check if this notebook is already in the crate
-        nb_current = crate.get(notebook.name)
-
-        # If there's an entry for this notebook, we'll update it
-        if nb_current:
-            # Get current properties of the notebook
-            properties = nb_current.properties()
-
-            # If details have changed in notebook metadata they should be updated in the crate
-            properties.update(
-                {
-                    "name": notebook_metadata["name"],
-                    "description": notebook_metadata["description"],
-                }
-            )
-        else:
-            # Default properties for a new notebook
-            properties = {
-                "@type": ["File", "SoftwareSourceCode"],
-                "name": notebook_metadata["name"],
-                "description": notebook_metadata["description"],
-                "programmingLanguage": id_ify(PYTHON["@id"]),
-                "encodingFormat": "application/x-ipynb+json",
-                "conformsTo": id_ify(
-                    "https://purl.archive.org/textcommons/profile#Notebook"
-                ),
-                "codeRepository": repo_url,
-                "url": nb_url,
+    def add_page(self, page_data, type="CreativeWork"):
+        """
+        Create a context entity for a HTML page or resource
+        """
+        # If it's a url string, convert to a dict
+        if isinstance(page_data, str):
+            page_data = {"url": page_data}
+        page_id = page_data["url"]
+        # Check if there's already an entity for this page
+        page = self.crate.get(page_id)
+        # If there's not an existing page entity, create one
+        if not page:
+            # Default properties, might be overwritten by values from page_data
+            props = {
+                "@id": page_id,
+                "@type": type,
+                "url": page_data["url"],
             }
+            # Create a new context entity for the page
+            page = self.add_context_entity(props)
+        # Update the context entity with additional properties from page data
+        page = self.update_properties(page, page_data)
+        # If there's a specific name in an existing record we want to keep it.
+        # Otherwise add a default name from the page title
+        default_name = self.get_page_title(page_data["url"])
+        if "name" in page_data and page.get("name") == default_name:
+            page["name"] = page_data["name"]
+        elif not page.get("name"):
+            page["name"] = default_name
+        return page
 
-            if doc_url := notebook_metadata.get("mainEntityOfPage"):
-                add_gw_page_link(crate, doc_url)
-                properties["mainEntityOfPage"] = id_ify(doc_url)
+    def add_pages(self, pages, type="CreativeWork"):
+        """
+        Add related pages
+        """
+        added = []
+        for page in pages:
+            if page:
+                added.append(self.add_page(page, type=type))
+        return added
 
-        # Add input files from 'object' property of actions
-        #nb_inputs = [a["object"] for a in notebook_metadata.get("action", [])]
-        #input_files = add_files(crate, nb_inputs, data_repo)
+    def add_licence(self, licences):
+        added = []
+        for licence in licences:
+            added.append(self.add_context_entity(LICENCES[licence]))
+        return added
 
-        # Add output files from 'result' property
-        #nb_outputs = [a["result"] for a in notebook_metadata.get("action", [])]
-        #output_files = add_files(crate, nb_outputs, data_repo)
+    def add_download(self, downloads):
+        added = []
+        for url in downloads:
+            download = {
+                "@id": url,
+                "@type": "DataDownload",
+                "name": "Download repository as zip",
+                "url": url
+            }
+            added.append(self.add_context_entity(download))
+        return added
 
-        # Add or update the notebook entity
-        # (if there's an existing entry it will be overwritten)
-        nb_new = crate.add_file(nb_id, properties=properties)
-
-        # Add a CreateAction that links the notebook run with the input and output files
-        for index, action in enumerate(notebook_metadata.get("action", [])):
-            if not data_repo or data_repo in action.get("result", [])[0]["url"]:
-                # print(action)
-                input_files = add_files(crate, action, "object", gw_url, data_repo, data_paths)
-                output_files = add_files(crate, action, "result", gw_url, data_repo, data_paths)
-                add_action(crate, nb_new, input_files, output_files, action.get("query", ""), index)
-                if data_repo:
-                    if dataset_gw_page := action.get("mainEntityOfPage"):
-                        crate.update_jsonld({"@id": "./", "mainEntityOfPage": id_ify(dataset_gw_page)})
-                        add_gw_page_link(crate, dataset_gw_page)
-                    if dataset_description := action.get("description"):
-                        crate.update_jsonld({"@id": "./", "description": dataset_description})
-                    dataset_examples = action.get("workExample", [])
-                    crate.update_jsonld({"@id": "./", "workExample": id_ify([e["url"] for e in dataset_examples])})
-                    for example in dataset_examples:
-                        example_props = {
-                            "@id": example["url"],
-                            "@type": "CreativeWork",
-                            "name": example["name"],
-                            "url": example["url"]
-                        }
-                        add_context_entity(crate, example_props)
-                
-
-        # If the notebook has author info, add people to crate
-        if notebook_metadata["author"]:
-            # Add people referenced in notebook metadata
-            persons = add_people(crate, notebook_metadata["author"])
-
-        # Otherwise add crate root authors to notebook
+    def add_entities(self, record, entity_type, entities):
+        if entity_type == "author":
+            added = self.add_people(entities)
+        elif entity_type == "action":
+            added = self.add_actions(record, entities)
+        elif entity_type == "license":
+            added = self.add_licence(entities)
+        elif entity_type == "isBasedOn":
+            added = self.add_pages(entities, type="SoftwareSourceCode")
+        elif entity_type == "distribution":
+            added = self.add_download(entities)
         else:
-            persons = root["author"]
+            added = self.add_pages(entities)
+        if added and entity_type != "action":
+            record[entity_type] = delistify(added)
 
-        # If people are not already attached to notebook, append them to the author property
-        for person in persons:
-            if (
-                nb_current and person not in nb_current.get("author", [])
-            ) or not nb_current:
-                nb_new.append_to("author", person)
+    def get_local_file_stats(self, local_path):
+        stats = {}
+        local_file = Path(local_path)
+        if local_file.is_dir():
+            stats["size"] = len(list(local_file.glob("*")))
+            file_stats = local_file.stat()
+            stats["dateModified"] = arrow.get(file_stats.st_mtime).isoformat()
+        else:
+            stats["sdDatePublished"] = arrow.utcnow().isoformat()
+            # Get file stats from local filesystem
+            file_stats = local_file.stat()
+            stats["contentSize"] = file_stats.st_size
+            stats["dateModified"] = arrow.get(file_stats.st_mtime).isoformat()
+            if local_file.name.endswith((".csv", ".ndjson")):
+                stats["size"] = 0
+                with local_file.open("r") as df:
+                    for line in df:
+                        stats["size"] += 1
+        return stats
 
+    def get_web_file_stats(self, url):
+        stats = {"sdDatePublished": arrow.utcnow().isoformat()}
+        if "github" in url:
+            repo = self.get_gh_repo(url)
+            file_path = url.split(f"/{repo.default_branch}/")[-1]
+            contents = repo.get_contents(file_path)
+            stats["contentSize"] = contents.size
+            stats["dateModified"] = contents.last_modified_datetime.isoformat()
+        else:
+            response = requests.head(url)
+            stats["contentSize"] = response.headers.get("Content-length")
+            stats["dateModified"] = arrow.get(
+                response.headers.get("Last-Modified"), "ddd, D MMM YYYY HH:mm:ss ZZZ"
+            ).isoformat()
+        return stats
 
-def remove_deleted_files(crate, data_paths):
-    """
-    Loops through File entities checking to see if they exist in local filesystem.
-    If they don't then they're removed from the crate.
-    """
-    file_ids = []
-    for action in crate.get_by_type("CreateAction"):
-        for file_type in ["object", "result"]:
-            try:
-                file_ids += [o["@id"] for o in action.properties()[file_type]]
-            except KeyError:
-                pass
-
-    # Loop through File entities
-    for f in crate.get_by_type("File"):
-        found = False
-        for dpath in data_paths:
-            if  Path(dpath, f.id).exists():
-                found = True
-        # If they don't exist and they're not urls, then delete
-        if not found and not f.id.startswith("http"):
-            crate.delete(f)
-        # If they're not referenced in CreateActions then delete
-        if f.id not in file_ids and not f.id.endswith(".ipynb"):
-            crate.delete(f)
-
-
-def remove_unreferenced_authors(crate):
-    """
-    Compares the current Person entities with those referenced by the "author" property.
-    Removes Person entities that are not authors.
-    """
-    # Get authors from root
-    authors = crate.get("./")["author"]
-
-    # Loop through all File entities, extracting authors
-    for file_ in crate.get_by_type("File"):
+    def get_gh_parts(self, url):
         try:
-            authors += file_["author"]
-        except KeyError:
-            pass
-    # Loop though Person entities checking against authors
-    for person in crate.get_by_type("Person"):
-        # If Person is not an author, delete them
-        if not person in authors:
-            crate.delete(person)
+            owner, repo = re.search(
+                r"https*://.*(?:github|githubusercontent).com/(.+?)/([a-zA-Z0-9\-_]+)", url
+            ).groups()
+        except AttributeError:
+            owner = None
+            repo = None
+        return owner, repo
 
+    def get_gh_repo(self, url):
+        owner, repo = self.get_gh_parts(url)
+        if owner and repo:
+            g = Github()
+            return g.get_repo(full_name_or_id=f"{owner}/{repo}")
 
-def add_update_action(crate, version):
-    """
-    Adds an UpdateAction to the crate when the repo version is updated.
-    """
-    # Create an id for the action using the version number
-    action_id = f"create_version_{version.replace('.', '_')}"
+    def get_gh_path(self, url):
+        default_branch = self.get_default_gh_branch(url)
+        return url.split(f"/{default_branch}/")[-1]
 
-    # Set basic properties for action
-    properties = {
-        "@type": "UpdateAction",
-        "endDate": datetime.datetime.now().strftime("%Y-%m-%d"),
-        "name": f"Create version {version}",
-        "actionStatus": {"@id": "http://schema.org/CompletedActionStatus"},
-    }
-
-    # Create entity
-    crate.add(ContextEntity(crate, action_id, properties=properties))
-
-
-def add_context_entity(crate, entity):
-    """
-    Adds a ContextEntity to the crate.
-
-    Parameters:
-        crate: the current ROCrate
-        entity: A JSONLD ready dict containing "@id" and "@type" values
-    """
-    crate.add(ContextEntity(crate, entity["@id"], properties=entity))
-
-def add_gw_page_link(crate, doc_url):
-    gw_title = get_page_title(doc_url)
-    nd_docs = {
-        "@id": doc_url,
-        "@type": "CreativeWork",
-        "name": gw_title,
-        "isPartOf": id_ify("https://glam-workbench.net"),
-        "url": doc_url
-    }
-    add_context_entity(crate, nd_docs)
-
-def get_page_title(url):
-    response = requests.get(url)
-    if response.ok:
-        soup = BeautifulSoup(response.text, features="lxml")
-        return soup.title.string.split(" - ")[0].strip()
-
-def get_gw_docs(repo_name):
-    """ """
-    gw_url = f"https://glam-workbench.net/{repo_name}"
-    gw_title = get_page_title(gw_url)
-    if gw_title:
-        return {"url": gw_url, "title": gw_title}
-
-
-def update_crate(version, data_repo, data_paths, notebooks):
-    """Creates a parent crate in the supplied directory.
-
-    Parameters:
-        version: The version of the repository
-        notebooks: The notebooks to include in the crate
-    """
-    repo = Repo(".")
-    code_repo_url = repo.git.config("--get", "remote.origin.url").replace(".git", "/")
-
-    # Set some defaults based on whether this is a code or data repo
-    if data_repo:
-        crate_source = "./data-rocrate"
-        repo_url = data_repo
-        description = "A GLAM Workbench dataset"
-    else:
-        crate_source = "./"
-        repo_url = code_repo_url
-        description = "A GLAM Workbench repository"
-
-    repo_name = repo_url.strip("/").split("/")[-1]
-    code_repo_name = code_repo_url.strip("/").split("/")[-1]
-    # Get links to the GLAM Workbench
-    gw_link = get_gw_docs(repo_name)
-    if gw_link:
-        gw_url = gw_link.get("url")
-    else:
-        gw_url = None
-    # Load existing crate
-    try:
-        crate = ROCrate(source=crate_source)
-
-    # If there's not an existing crate, create a new one
-    except (ValueError, FileNotFoundError):
-        crate = ROCrate()
-
-        crate.update_jsonld(
-            {
-                "@id": "./",
-                "@type": "Dataset",
-                "name": repo_name,
-                "description": description,
-                "url": repo_url,
-                "author": id_ify([a["orcid"] for a in DEFAULT_AUTHORS]),
-            }
-        )
-
-        if gw_link:
-            gw_url = gw_link.get("url")
-            crate.update_jsonld(
-                {"@id": "./", "mainEntityOfPage": id_ify(gw_url)}
+    def get_repo_info(self):
+        # Try to get some info from the local git repo
+        try:
+            repo = git.Repo(".")
+            repo_url = repo.remotes.origin.url.replace(
+                ".git", "/"
             )
-            gw_docs = {
-                "@id": gw_url,
-                "@type": "CreativeWork",
-                "name": gw_link["title"],
-                "isPartOf": id_ify("https://glam-workbench.net/"),
-                "url": gw_url,
-            }
-            add_context_entity(crate, gw_docs)
-            add_context_entity(crate, GLAM_WORKBENCH)
+            repo_name = repo_url.strip("/").split("/")[-1]
+        # There is no git repo or no remote set
+        except (InvalidGitRepositoryError, GitCommandError):
+            repo_url = ""
+            repo_name = "example-repo"
+        return repo_name, repo_url
 
-        add_people(crate, DEFAULT_AUTHORS)
+    def get_repo_link(self, entry):
+        """
+        Files and notebooks are usually part of a code repository.
+        Also crate can have a codeRepository prop.
+        If the files have urls then use the url to get repo.
+        Otherwise use the local git info to get repo url.
+        """
+        repo_url = None
+        if url := entry.get("url"):
+            owner, repo = self.get_gh_parts(url)
+            if owner and repo:
+                repo_url = f"https://github.com/{owner}/{repo}"
+        else:
+            _, repo_url = self.get_repo_info()
+        return repo_url
 
-    # If this is a data repo crate, create a link back to code repo
-    if data_repo:
-        crate.update_jsonld(
-            {
-                "@id": "./",
-                "isBasedOn": id_ify(code_repo_url),
-                "distribution": id_ify(f"{repo_url.rstrip('/')}/archive/refs/heads/main.zip")
+    def add_repo_link(self, entry):
+        if "isPartOf" not in entry:
+            repo_link = self.get_repo_link(entry)
+            if repo_link:
+                entry["isPartOf"] = repo_link
+        return entry
+
+    def get_default_gh_branch(self, url):
+        """
+        Get the default branch of a GH repository from a url that points to it.
+        """
+        repo = self.get_gh_repo(url)
+        return repo.default_branch
+
+    def get_gh_file_url(self, file_path):
+        """
+        Construct a url to that points to a notebook file in the code repository.
+        Note that you could get the url from the GH repo, but there's a possibility
+        that this script will be run before every notebook has been committed and pushed.
+        """
+        _, repo_url = self.get_repo_info()
+        default_branch = self.get_default_gh_branch(repo_url)
+        return f"{repo_url.strip('/')}/blob/{default_branch}/{file_path}"
+
+
+    def add_files(self, files):
+        added = []
+        for data_file in files:
+            local_path = data_file.get("localPath")
+            url = data_file.get("url")
+            if url or local_path:
+                props = {"@type": ["File", "Dataset"]}
+                data_file = self.add_repo_link(data_file)
+                if url:
+                    props["name"] = data_file.get("name", os.path.basename(url))
+                    if local_path:
+                        props.update(self.get_local_file_stats(local_path))
+                    else:
+                        props.update(self.get_web_file_stats(url))
+                    fetch_remote = False
+                    file_id = url
+                    if self.data_repo:
+                        # We want the file ids to be relative to the data crate, so use the local path
+                        # or fetch_remote to put them in the right place.
+                        if local_path:
+                            file_id = local_path
+                        else:
+                            fetch_remote = True
+                    file_added = self.crate.add_file(
+                        file_id, properties=props, fetch_remote=fetch_remote
+                    )
+                elif local_path:
+                    props["name"] = data_file.get("name", os.path.basename(local_path))
+                    props.update(self.get_local_file_stats(local_path))
+                    file_added = self.crate.add_file(
+                        local_path, properties=props, dest_path=local_path
+                    )
+                file_added = self.update_properties(
+                    file_added, data_file, exclude=["localPath"]
+                )
+                added.append(file_added)
+        return added
+    
+    def file_in_repo(self, data_file):
+        """
+        Check a data file's url to see if it's part of the data repo specified
+        by the --data-repo parameter.
+        """
+        owner, repo = self.get_gh_parts(self.data_repo)
+        if f"{owner}/{repo}" in data_file.get("url", ""):
+            return True
+
+    def filter_files(self, action_data, file_relation):
+        files = listify(action_data.get(file_relation, []))
+        if self.data_repo:
+            return list(filter(self.file_in_repo, files))
+        else:
+            return files
+
+    def add_actions(self, notebook, actions):
+        added = []
+        for index, action_data in enumerate(actions):
+            action_id = (
+                f"#{os.path.basename(notebook.id).replace('.ipynb', '')}_run_{index}"
+            )
+            props = {
+                "@id": action_id,
+                "@type": "CreateAction",
+                "instrument": self.id_ify(notebook.id),
+                "actionStatus": {"@id": "http://schema.org/CompletedActionStatus"},
+                "name": f"Run of notebook: {os.path.basename(notebook.id)}",
             }
+            file_dates = []
+            for file_relation in ["result", "object"]:
+                added_files = self.add_files(
+                    self.filter_files(action_data, file_relation)
+                )
+                if added_files:
+                    props[file_relation] = delistify(added_files)
+                    for data_file in added_files:
+                        file_dates.append(data_file.get("dateModified"))
+            props["endDate"] = sorted(file_dates)[-1]
+            action = self.add_context_entity(props)
+            action = self.update_properties(
+                action, action_data, exclude=["result", "object"]
+            )
+            self.crate.root_dataset.append_to("mentions", action)
+            added.append(action)
+        return added
+
+    def add_python_version(self):
+        # I could also get this from notebook metadata
+        # Get the version components from the system
+        major, minor, micro = sys.version_info[0:3]
+        # Construct url and version name
+        url = f"https://www.python.org/downloads/release/python-{major}{minor}{micro}/"
+        version = f"{major}.{minor}.{micro}"
+        # Define properties of context entity
+        entity = {
+            "@id": url,
+            "version": version,
+            "name": f"Python {version}",
+            "url": url,
+            "@type": ["ComputerLanguage", "SoftwareApplication"],
+        }
+        return self.crate.add(
+            ContextEntity(self.crate, entity["@id"], properties=entity)
         )
-        source_repo = {
-            "@id": code_repo_url,
-            "@type": "Dataset",
-            "name": code_repo_name,
-            "url": code_repo_url,
-        }
-        add_context_entity(crate, source_repo)
 
-        download = {
-            "@id": f"{ repo_url.rstrip('/')}/archive/refs/heads/main.zip",
-            "@type": "DataDownload",
-            "name": "Download repository as zip",
-            "url": f"{ repo_url.rstrip('/')}/archive/refs/heads/main.zip",
-        }
-        add_context_entity(crate, download)
+    def get_page_title(self, url):
+        """
+        Get title of the page at the supplied url.
+        """
+        response = requests.get(url)
+        if response.ok:
+            soup = BeautifulSoup(response.text, features="lxml")
+            return soup.title.string.strip()
 
-    # If this is a new version, change version number and add UpdateAction
-    if version:
-        crate.update_jsonld(
-            {
-                "@id": "./",
-                "version": version,
-                "datePublished": datetime.datetime.now().strftime("%Y-%m-%d"),
+    def get_nb_metadata(self, notebook):
+        nb = nbformat.read(notebook, nbformat.NO_CONVERT)
+        return {k: v for k, v in nb.metadata.rocrate.items() if v}
+
+    def add_notebook(self, notebook):
+        gh_url = self.get_gh_file_url(notebook)
+        if self.data_repo:
+            nb_id = gh_url
+        else:
+            nb_id = notebook
+        # Get metadata embedded in notebooks
+        nb_metadata = self.get_nb_metadata(notebook)
+        nb_metadata = self.add_repo_link(nb_metadata)
+        # Default notebook properties
+        nb_props = {
+            "@type": ["File", "SoftwareSourceCode"],
+            "encodingFormat": "application/x-ipynb+json",
+            "programmingLanguage": self.id_ify(self.add_python_version().id),
+            "conformsTo": self.id_ify(
+                "https://purl.archive.org/textcommons/profile#Notebook"
+            ),
+            "url": gh_url,
+        }
+        # Add notebook to crate
+        new_nb = self.crate.add_file(nb_id, properties=nb_props)
+        # Add properties from notebook metadata
+        new_nb = self.update_properties(new_nb, nb_metadata)
+        return new_nb
+
+    def get_old_crate_data(self, crate_source="./"):
+        try:
+            old_crate = ROCrate(source=crate_source)
+            old_root = old_crate.get("./")
+            # Get the old root properties
+            old_props = old_root.properties()
+            # Add old properties to new record (except for those that will be populated from notebooks)
+            root_props = {
+                k: v
+                for k, v in old_props.items()
+                if k in ["name", "description", "mainEntityOfPage"] and not isinstance(v, dict)
             }
-        )
-        add_update_action(crate, version)
+            entities = {k: old_crate.get(v["@id"]) for k, v in old_props.items()
+                if k in ["mainEntityOfPage", "license"] and isinstance(v, dict)}
+            # Get version UpdateAction records for inclusion in new crate
+            versions = old_crate.get_by_type("UpdateAction")
+        # If there's not an existing crate, try to set some default properties
+        except (ValueError, FileNotFoundError):
+            root_props = {}
+            versions = []
+            entities = {}
+        return root_props, entities, versions
 
-    # Add licence to root
-    crate.license = id_ify(DEFAULT_LICENCE["@id"])
-    add_context_entity(crate, DEFAULT_LICENCE)
+    def prepare_data_crate(self):
+        _, repo_name = self.get_gh_parts(self.data_repo)
+        if repo_name:
+            crate_source = f"./{repo_name}-rocrate"
+        else:
+            crate_source = "./data-rocrate"
+        _, code_repo_url = self.get_repo_info()
+        root_props, entities, versions = self.get_old_crate_data(crate_source)
+        if not root_props:
+            root_props = {
+                "name": self.defaults.get("name", repo_name),
+                "description": self.defaults.get("description", ""),
+                "isBasedOn": self.defaults.get("isBasedOn", code_repo_url),
+                "distribution": f"{self.data_repo.rstrip('/')}/archive/refs/heads/main.zip",
+            }
+            versions = []
+            entities = {}
+        return root_props, crate_source, entities, versions
 
-    # Add licence to metadata
-    crate.update_jsonld(
-        {
-            "@id": "ro-crate-metadata.json",
-            "license": id_ify(METADATA_LICENCE["@id"]),
-        }
-    )
-    add_context_entity(crate, METADATA_LICENCE)
-    add_context_entity(crate, NKC_LICENCE)
-    add_context_entity(crate, CNE_LICENCE)
+    def prepare_code_crate(self):
+        # Load data from an existing crate
+        root_props, entities, versions = self.get_old_crate_data()
+        if not root_props:
+            # Get info from git
+            repo_name, repo_url = self.get_repo_info()
+            root_props = {
+                "name": self.defaults.get("name", repo_name),
+                "description": self.defaults.get("description", ""),
+                "codeRepository": self.defaults.get("codeRepository", repo_url),
+            }
+            versions = []
+        return root_props, "./", entities, versions
 
-    # Add Python for programming language
-    add_context_entity(crate, PYTHON)
-
-    # Process notebooks
-    for notebook in notebooks:
-        add_notebook(crate, notebook, data_repo, data_paths, gw_url)
-
-    # Remove files from crate if they're no longer in the repo
-    # remove_deleted_files(crate, data_paths)
-
-    # Remove authors from crate if they're not referenced by any entities
-    remove_unreferenced_authors(crate)
-
-    # Save the crate
-    crate.write(crate_source)
+    def update_crate(self):
+        if self.data_repo:
+            root_props, crate_source, entities, versions = self.prepare_data_crate()
+        else:
+            root_props, crate_source, entities, versions = self.prepare_code_crate()
+        self.crate = ROCrate()
+        # Add properties to the root
+        root = self.crate.get("./")
+        # update_jsonld doesn't seem to work here?
+        #for p, v in root_props.items():
+        #    root[p] = v
+        root = self.update_properties(root, root_props)
+        # Add version information
+        for v in versions:
+            self.crate.add(v)
+        for k, v in entities.items():
+            root[k] = self.id_ify(v.id)
+            self.crate.add(v)
+        # Add authors from defaults
+        self.add_entities(root, "author", self.defaults.get("authors", []))
+        # If this is a new version, change version number and add UpdateAction
+        if self.version:
+            root["version"] = self.version
+            self.add_update_action(self.version)
+        # Add notebooks
+        for notebook in self.get_notebooks():
+            nb = self.add_notebook(notebook)
+            for author in listify(nb.get("author")):
+                if author not in root.get("author", []):
+                    root.append_to("author", author)
+        # Set licence of crate metadata
+        root["license"] = self.add_context_entity(LICENCES["metadata"])
+        # Save crate
+        self.crate.write(crate_source)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "--defaults",
+        type=str,
+        help="File containing Crate default values",
+        required=False,
+    )
+    parser.add_argument(
+        "--crate-path", type=str, help="Path to crate", default="./"
+    )
+    parser.add_argument(
         "--version", type=str, help="New version number", required=False
     )
     parser.add_argument("--data-repo", type=str, default="", required=False)
-    parser.add_argument("--data-paths", type=str, default=".", required=False)
     args = parser.parse_args()
-    data_paths = ["."]
-    data_paths += args.data_paths.split(",")
-    main(args.version, args.data_repo, data_paths)
+    if args.defaults:
+        defaults = json.loads(Path(args.defaults).read_text())
+    else:
+        defaults = {}
+
+    main(defaults=defaults, crate_path=args.crate_path, version=args.version, data_repo=args.data_repo)
