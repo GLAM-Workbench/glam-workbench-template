@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import re
 
+
 def get_create_action(crate, datafile):
     actions = crate.get_by_type("CreateAction")
     for action in actions:
@@ -10,6 +11,13 @@ def get_create_action(crate, datafile):
         for result in props["result"]:
             if result["@id"] == datafile:
                 return action
+
+
+def listify(value):
+    if not isinstance(value, list):
+        return [value]
+    return value
+
 
 crate = ROCrate("./")
 root = crate.get("./").properties()
@@ -31,7 +39,7 @@ for nb in crate.get_by_type(["File", "SoftwareSourceCode"]):
 datasets = []
 for action in crate.get_by_type("CreateAction"):
     print(action)
-    for result in action["result"]:
+    for result in listify(action["result"]):
         dataset = crate.get(result["@id"])
         source = crate.get(dataset["isPartOf"]["@id"])
         datasets.append(source)
@@ -46,5 +54,5 @@ md += "\n\n<!-- START RUN INFO -->\n\n<!-- END RUN INFO -->"
 md += "\n\n----\nCreated by [Tim Sherratt](https://timsherratt.au) for the [GLAM Workbench](https://glam-workbench.net)"
 
 
-md = re.sub(r'<style type="text/css">\s*</style>', '', md)
+md = re.sub(r'<style type="text/css">\s*</style>', "", md)
 Path("README.md").write_text(md)
